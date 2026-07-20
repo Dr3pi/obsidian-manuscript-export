@@ -1,0 +1,4 @@
+node_modules/
+test/.core-bundle.cjs
+test/sample-output.epub
+*.js.map
