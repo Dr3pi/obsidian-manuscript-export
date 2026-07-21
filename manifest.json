@@ -1,9 +1,9 @@
 {
 	"id": "manuscript-export",
 	"name": "Manuscript Export",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"minAppVersion": "1.4.0",
-	"description": "Export a book manuscript written in Obsidian to a clean, professionally-structured EPUB.",
+	"description": "Export a book manuscript to a clean, professionally-structured EPUB.",
 	"author": "Dr3pi",
 	"authorUrl": "https://github.com/Dr3pi",
 	"isDesktopOnly": true

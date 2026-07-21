@@ -64,7 +64,11 @@ export default class ManuscriptExportPlugin extends Plugin {
 	}
 
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		// loadData() returns arbitrary persisted JSON typed `any` by the
+		// Obsidian API -- narrow it explicitly before merging rather than
+		// letting `any` flow straight into a typed field.
+		const loaded = (await this.loadData()) as Partial<ManuscriptExportSettings> | null;
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, loaded ?? {});
 	}
 
 	async saveSettings() {
@@ -117,7 +121,12 @@ export default class ManuscriptExportPlugin extends Plugin {
 		const chapters: ChapterInput[] = [];
 		for (const file of noteFiles) {
 			const raw = await this.app.vault.read(file);
-			const frontmatterTitle = this.app.metadataCache.getFileCache(file)?.frontmatter?.title as string | undefined;
+			// frontmatter is typed `any` by the Obsidian API -- narrow with
+			// a real runtime check rather than an unchecked cast, so a
+			// non-string title field (e.g. a number or array, however
+			// unlikely) can't silently masquerade as a string.
+			const rawFrontmatterTitle = this.app.metadataCache.getFileCache(file)?.frontmatter?.title;
+			const frontmatterTitle = typeof rawFrontmatterTitle === "string" ? rawFrontmatterTitle : undefined;
 			const { title: headingTitle, rest } = extractLeadingHeading(raw);
 			const title = this.deriveChapterTitle(file, frontmatterTitle, headingTitle);
 
