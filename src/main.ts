@@ -65,10 +65,26 @@ export default class ManuscriptExportPlugin extends Plugin {
 
 	async loadSettings() {
 		// loadData() returns arbitrary persisted JSON typed `any` by the
-		// Obsidian API -- narrow it explicitly before merging rather than
-		// letting `any` flow straight into a typed field.
-		const loaded = (await this.loadData()) as Partial<ManuscriptExportSettings> | null;
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, loaded ?? {});
+		// Obsidian API. An `as` cast straight to ManuscriptExportSettings
+		// doesn't actually validate anything at runtime -- it's still
+		// flagged as unsafe, correctly, since corrupted or old-format data
+		// would silently masquerade as well-typed. Check each field for
+		// real, falling back to the default for anything that isn't
+		// actually a string (missing, wrong type, or corrupted data.json).
+		const loaded: unknown = await this.loadData();
+		const record: Record<string, unknown> =
+			typeof loaded === "object" && loaded !== null ? (loaded as Record<string, unknown>) : {};
+
+		const stringOrDefault = (value: unknown, fallback: string): string =>
+			typeof value === "string" ? value : fallback;
+
+		this.settings = {
+			bookTitle: stringOrDefault(record.bookTitle, DEFAULT_SETTINGS.bookTitle),
+			authorName: stringOrDefault(record.authorName, DEFAULT_SETTINGS.authorName),
+			language: stringOrDefault(record.language, DEFAULT_SETTINGS.language),
+			manuscriptFolder: stringOrDefault(record.manuscriptFolder, DEFAULT_SETTINGS.manuscriptFolder),
+			outputFolder: stringOrDefault(record.outputFolder, DEFAULT_SETTINGS.outputFolder),
+		};
 	}
 
 	async saveSettings() {

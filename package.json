@@ -1,6 +1,6 @@
 {
 	"name": "manuscript-export",
-	"version": "0.1.1",
+	"version": "0.1.2",
 	"description": "Export a book manuscript written in Obsidian to a clean, professionally-structured EPUB.",
 	"main": "main.js",
 	"scripts": {
