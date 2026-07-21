@@ -1,7 +1,7 @@
 {
 	"id": "manuscript-export",
 	"name": "Manuscript Export",
-	"version": "0.1.2",
+	"version": "0.1.3",
 	"minAppVersion": "1.4.0",
 	"description": "Export a book manuscript to a clean, professionally-structured EPUB.",
 	"author": "Dr3pi",

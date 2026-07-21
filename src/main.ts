@@ -141,7 +141,7 @@ export default class ManuscriptExportPlugin extends Plugin {
 			// a real runtime check rather than an unchecked cast, so a
 			// non-string title field (e.g. a number or array, however
 			// unlikely) can't silently masquerade as a string.
-			const rawFrontmatterTitle = this.app.metadataCache.getFileCache(file)?.frontmatter?.title;
+			const rawFrontmatterTitle: unknown = this.app.metadataCache.getFileCache(file)?.frontmatter?.title;
 			const frontmatterTitle = typeof rawFrontmatterTitle === "string" ? rawFrontmatterTitle : undefined;
 			const { title: headingTitle, rest } = extractLeadingHeading(raw);
 			const title = this.deriveChapterTitle(file, frontmatterTitle, headingTitle);
