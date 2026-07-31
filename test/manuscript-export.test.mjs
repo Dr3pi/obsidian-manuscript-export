@@ -4,9 +4,89 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import JSZip from "jszip";
-import { convertNoteToXhtmlBody, buildEpub } from "./.core-bundle.cjs";
+import {
+	convertNoteToXhtmlBody,
+	buildEpub,
+	stripFrontmatter,
+	flattenScenes,
+	parseLongformFrontmatter,
+	resolveSceneFolderPath,
+	splitSingleFileIntoChapters,
+} from "./.core-bundle.cjs";
 
 const noResolver = () => null;
+
+test("stripFrontmatter removes a leading YAML block -- fences must not render as scene breaks", () => {
+	const md = "---\ntitle: Chapter One\npov: Mira\n---\nThe rain had stopped.";
+	assert.equal(stripFrontmatter(md), "The rain had stopped.");
+
+	const html = convertNoteToXhtmlBody(stripFrontmatter(md), noResolver);
+	assert.doesNotMatch(html, /scene-break/);
+	assert.doesNotMatch(html, /pov: Mira/);
+	assert.match(html, /The rain had stopped\./);
+});
+
+test("stripFrontmatter handles an empty frontmatter block and leaves mid-document rules alone", () => {
+	assert.equal(stripFrontmatter("---\n---\nBody text."), "Body text.");
+
+	const sceneBreakDoc = "First scene.\n\n---\n\nSecond scene.";
+	assert.equal(stripFrontmatter(sceneBreakDoc), sceneBreakDoc);
+});
+
+test("flattenScenes flattens Longform's nested scene lists depth-first, in order", () => {
+	assert.deepEqual(flattenScenes(["One", ["Two", ["Three"]], "Four"]), ["One", "Two", "Three", "Four"]);
+	assert.deepEqual(flattenScenes(undefined), []);
+	assert.deepEqual(flattenScenes([42, "  ", "Real Scene"]), ["Real Scene"]);
+});
+
+test("parseLongformFrontmatter accepts real scenes/single projects and rejects junk", () => {
+	const scenes = parseLongformFrontmatter({
+		format: "scenes",
+		title: "My Book",
+		sceneFolder: "/",
+		scenes: ["A", "B"],
+		ignoredFiles: [],
+	});
+	assert.equal(scenes.format, "scenes");
+	assert.equal(scenes.title, "My Book");
+	assert.deepEqual(scenes.scenes, ["A", "B"]);
+
+	const single = parseLongformFrontmatter({ format: "single", title: "Novella" });
+	assert.equal(single.format, "single");
+	assert.deepEqual(single.scenes, []);
+
+	assert.equal(parseLongformFrontmatter(null), null);
+	assert.equal(parseLongformFrontmatter("longform"), null);
+	assert.equal(parseLongformFrontmatter({ format: "banana" }), null);
+	assert.equal(parseLongformFrontmatter({ format: "scenes", scenes: [] }), null);
+});
+
+test("resolveSceneFolderPath treats '/' as the index file's own folder", () => {
+	assert.equal(resolveSceneFolderPath("Books/Novel", "/"), "Books/Novel");
+	assert.equal(resolveSceneFolderPath("Books/Novel", "Scenes"), "Books/Novel/Scenes");
+	assert.equal(resolveSceneFolderPath("/", "/"), "");
+	assert.equal(resolveSceneFolderPath("/", "Scenes"), "Scenes");
+});
+
+test("splitSingleFileIntoChapters splits on level-1 headings only", () => {
+	const md = "Prologue text.\n\n# Chapter One\n\nFirst. \n\n## Not a chapter\n\n# Chapter Two\n\nSecond.";
+	const parts = splitSingleFileIntoChapters(md);
+
+	assert.equal(parts.length, 3);
+	assert.equal(parts[0].title, null);
+	assert.match(parts[0].body, /Prologue text\./);
+	assert.equal(parts[1].title, "Chapter One");
+	assert.match(parts[1].body, /## Not a chapter/);
+	assert.equal(parts[2].title, "Chapter Two");
+	assert.match(parts[2].body, /Second\./);
+});
+
+test("splitSingleFileIntoChapters returns one untitled chapter when there are no headings", () => {
+	const parts = splitSingleFileIntoChapters("Just one long stream of prose.\n\nAnother paragraph.");
+	assert.equal(parts.length, 1);
+	assert.equal(parts[0].title, null);
+	assert.match(parts[0].body, /Another paragraph\./);
+});
 
 test("headings, emphasis, and scene breaks convert correctly", () => {
 	const md = [

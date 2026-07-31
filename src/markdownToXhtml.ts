@@ -32,6 +32,18 @@ function stripComments(source: string): string {
 }
 
 /**
+ * Strips a leading YAML frontmatter block (---\n...\n---). Frontmatter is
+ * metadata, never reader content -- without this, the opening/closing ---
+ * fences would render as scene breaks and the metadata itself as prose.
+ * Callers inside Obsidian prefer the metadata cache's frontmatterPosition
+ * (Obsidian's own parse) and use this as the cold-cache fallback.
+ */
+export function stripFrontmatter(markdown: string): string {
+	const match = /^---[ \t]*\r?\n(?:[\s\S]*?\r?\n)?---[ \t]*(?:\r?\n|$)/.exec(markdown);
+	return match ? markdown.slice(match[0].length) : markdown;
+}
+
+/**
  * Placeholders wrap a resolved-HTML index in Unicode Private Use Area
  * characters (U+E000/U+E001), which never appear in real manuscript prose
  * -- unlike plain digits, which do ("In 1922, she..."). This lets a
