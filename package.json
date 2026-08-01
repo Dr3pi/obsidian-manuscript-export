@@ -6,7 +6,7 @@
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "node esbuild.config.mjs production",
-		"test": "node test/build-testable-core.mjs && node --test test/manuscript-export.test.mjs"
+		"test": "node test/build-testable-core.mjs && node test/build-harness.mjs && node --test test/manuscript-export.test.mjs test/integration.test.mjs"
 	},
 	"license": "MIT",
 	"devDependencies": {

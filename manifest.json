@@ -3,7 +3,7 @@
 	"name": "Manuscript Export",
 	"version": "0.2.0",
 	"minAppVersion": "1.4.0",
-	"description": "Export a book manuscript to a clean, professionally-structured EPUB.",
+	"description": "Export a book manuscript to a clean, professionally-structured EPUB, including one-command export of Longform projects.",
 	"author": "Dr3pi",
 	"authorUrl": "https://github.com/Dr3pi",
 	"isDesktopOnly": true
