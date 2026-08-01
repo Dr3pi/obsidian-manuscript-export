@@ -1,4 +1,5 @@
 node_modules/
 test/.core-bundle.cjs
+test/.harness-bundle.cjs
 test/sample-output.epub
 *.js.map
