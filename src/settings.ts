@@ -45,7 +45,7 @@ export class ManuscriptExportSettingTab extends PluginSettingTab {
 		return [
 			{
 				name: "Book title",
-				desc: "Used as the EPUB's title and shown in e-readers.",
+				desc: "Used as the EPUB's title and shown in e-readers. Longform exports use the project's own title instead.",
 				control: { type: "text", key: "bookTitle", placeholder: "My Manuscript" },
 			},
 			{
@@ -88,7 +88,7 @@ export class ManuscriptExportSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Book title")
-			.setDesc("Used as the EPUB's title and shown in e-readers.")
+			.setDesc("Used as the EPUB's title and shown in e-readers. Longform exports use the project's own title instead.")
 			.addText((text) =>
 				text
 					.setPlaceholder("My Manuscript")

@@ -65,9 +65,14 @@ test("Longform scenes project exports in author order, skipping missing scenes w
 	});
 
 	const plugin = await loadedPlugin(app);
+	// A stale vault-wide title from an earlier manuscript must NOT override
+	// the Longform project's own title (real failure caught in manual testing).
+	plugin.settings.bookTitle = "The Last Letter";
 	await plugin.exportLongformProject();
 
 	const zip = await readEpub(app, "The Hollow Crown.epub");
+	const opf = await zip.file("OEBPS/content.opf").async("string");
+	assert.match(opf, /<dc:title>The Hollow Crown<\/dc:title>/);
 	assert.deepEqual(await chapterTitlesInSpineOrder(zip), ["Arrival", "The Feast", "Departure at Dawn"]);
 
 	const chapterOne = await zip.file("OEBPS/chapter-001.xhtml").async("string");

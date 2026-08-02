@@ -292,9 +292,11 @@ export default class ManuscriptExportPlugin extends Plugin {
 
 	private async exportLongformEntry(entry: LongformIndexEntry): Promise<void> {
 		const { indexFile, project } = entry;
-		// An explicit book title in settings wins; otherwise the Longform
-		// project's own title is the natural default.
-		const bookTitle = this.settings.bookTitle || project.title || "Untitled Manuscript";
+		// The Longform project's own title is the author's intent for THIS
+		// book; the settings title is vault-wide and may belong to a
+		// different manuscript entirely (a real failure caught in manual
+		// testing), so the project title wins.
+		const bookTitle = project.title || this.settings.bookTitle || "Untitled Manuscript";
 
 		const chapters: ChapterInput[] = [];
 		const missingScenes: string[] = [];
