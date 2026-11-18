@@ -155,6 +155,115 @@ test("multiple Longform projects go through the picker (stub picks the first)", 
 	assert.equal(app.vault.binaryAt("Second Book.epub"), null);
 });
 
+// Minimal byte signatures: enough for the plugin's format sniffing, which is what's under test.
+const JPEG = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4, 5]).buffer;
+const PNG = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 6, 7, 8]).buffer;
+const GIF = Uint8Array.from([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0, 0]).buffer;
+
+async function coverBytes(zip) {
+	const files = zip.file(/^OEBPS\/images\/cover\./);
+	return files.length === 0 ? null : Array.from(await files[0].async("uint8array"));
+}
+
+test("Longform cover property ([[wikilink]]) becomes the EPUB cover; the vault-wide setting is not used", async () => {
+	resetNotices();
+	const app = new App();
+	addNote(app, "Novel/Index.md", '---\ncover: "[[Cover.jpg]]"\nlongform: ...\n---\n', {
+		frontmatter: {
+			cover: "[[Cover.jpg]]",
+			longform: { format: "scenes", title: "Alpha Draft", sceneFolder: "/", scenes: ["One"] },
+		},
+	});
+	addNote(app, "Novel/One.md", "Opening line.");
+	app.vault.addFile("Novel/Assets/Cover.jpg", JPEG);
+	app.vault.addFile("Other Book/front.png", PNG);
+
+	const plugin = await loadedPlugin(app);
+	// A cover set for a different (folder-mode) book must not leak onto this one.
+	plugin.settings.coverImage = "Other Book/front.png";
+	await plugin.exportLongformProject();
+
+	const zip = await readEpub(app, "Alpha Draft.epub");
+	assert.deepEqual(await coverBytes(zip), Array.from(new Uint8Array(JPEG)));
+	assert.ok(zip.file("OEBPS/cover.xhtml"));
+	assert.ok(!notices.some((n) => n.includes("cover image")), `unexpected cover warning: ${JSON.stringify(notices)}`);
+});
+
+test("unquoted YAML wikilink (parsed as a nested list) still finds the Longform cover", async () => {
+	resetNotices();
+	const app = new App();
+	addNote(app, "Index.md", "---\ncover: [[Cover.png]]\nlongform: ...\n---\nOnly line.", {
+		frontmatter: { cover: [["Cover.png"]], longform: { format: "single", title: "Nested" } },
+	});
+	app.vault.addFile("Art/Cover.png", PNG);
+
+	const plugin = await loadedPlugin(app);
+	await plugin.exportLongformProject();
+
+	const zip = await readEpub(app, "Nested.epub");
+	assert.deepEqual(await coverBytes(zip), Array.from(new Uint8Array(PNG)));
+});
+
+test("Longform project without a cover property exports exactly as before, even if the setting has one", async () => {
+	resetNotices();
+	const app = new App();
+	addNote(app, "Plain.md", "---\nlongform: ...\n---\nOnly line.", {
+		frontmatter: { longform: { format: "single", title: "Plain" } },
+	});
+	app.vault.addFile("front.png", PNG);
+
+	const plugin = await loadedPlugin(app);
+	plugin.settings.coverImage = "front.png";
+	await plugin.exportLongformProject();
+
+	const zip = await readEpub(app, "Plain.epub");
+	assert.equal(await coverBytes(zip), null);
+	assert.equal(zip.file("OEBPS/cover.xhtml"), null);
+});
+
+test("folder mode uses the Cover image setting (vault path)", async () => {
+	resetNotices();
+	const app = new App();
+	addNote(app, "Chapters/1 Start.md", "It began.");
+	app.vault.addFile("Manuscript/Assets/cover.png", PNG);
+
+	const plugin = await loadedPlugin(app);
+	plugin.settings.manuscriptFolder = "Chapters";
+	plugin.settings.bookTitle = "Folder Book";
+	plugin.settings.coverImage = "Manuscript/Assets/cover.png";
+	await plugin.exportToEpub();
+
+	const zip = await readEpub(app, "Folder Book.epub");
+	assert.deepEqual(await coverBytes(zip), Array.from(new Uint8Array(PNG)));
+	const opf = await zip.file("OEBPS/content.opf").async("string");
+	assert.match(opf, /properties="cover-image"/);
+});
+
+test("a missing or non-JPG/PNG cover never blocks the export: book written without one, with a clear notice", async () => {
+	for (const [setting, expectedWords] of [
+		["Assets/nope.jpg", "not found"],
+		["Assets/anim.gif", "not a JPG or PNG"],
+	]) {
+		resetNotices();
+		const app = new App();
+		addNote(app, "Chapters/1 Start.md", "It began.");
+		app.vault.addFile("Assets/anim.gif", GIF);
+
+		const plugin = await loadedPlugin(app);
+		plugin.settings.manuscriptFolder = "Chapters";
+		plugin.settings.bookTitle = "Still Exports";
+		plugin.settings.coverImage = setting;
+		await plugin.exportToEpub();
+
+		const zip = await readEpub(app, "Still Exports.epub");
+		assert.equal(await coverBytes(zip), null, `no cover expected for ${setting}`);
+		assert.ok(
+			notices.some((n) => n.includes("cover image") && n.includes(expectedWords) && n.includes("exported without a cover")),
+			`expected a "${expectedWords}" notice for ${setting}, got: ${JSON.stringify(notices)}`
+		);
+	}
+});
+
 test("no Longform projects in the vault points the user at folder mode instead", async () => {
 	resetNotices();
 	const app = new App();

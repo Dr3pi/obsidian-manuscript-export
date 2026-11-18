@@ -9,6 +9,8 @@ export interface ManuscriptExportSettings {
 	manuscriptFolder: string;
 	/** Vault-relative folder the finished .epub gets written into. */
 	outputFolder: string;
+	/** Optional JPG/PNG cover for folder exports: a vault path or [[wikilink]]. */
+	coverImage: string;
 }
 
 export const DEFAULT_SETTINGS: ManuscriptExportSettings = {
@@ -17,7 +19,11 @@ export const DEFAULT_SETTINGS: ManuscriptExportSettings = {
 	language: "en",
 	manuscriptFolder: "",
 	outputFolder: "",
+	coverImage: "",
 };
+
+const COVER_IMAGE_DESC =
+	"Optional JPG or PNG shown as the book's cover in folder exports. Use a vault path (Manuscript/Assets/cover.jpg) or a [[wikilink]]. Longform exports use the cover property on the project's index note instead, e.g. cover: \"[[Cover.jpg]]\".";
 
 /** Per-field normalization, matching the previous imperative onChange handlers exactly. */
 function normalizeSettingValue(key: keyof ManuscriptExportSettings, value: string): string {
@@ -26,6 +32,7 @@ function normalizeSettingValue(key: keyof ManuscriptExportSettings, value: strin
 			return value.trim() || "en";
 		case "manuscriptFolder":
 		case "outputFolder":
+		case "coverImage":
 			return value.trim();
 		default:
 			return value;
@@ -67,6 +74,11 @@ export class ManuscriptExportSettingTab extends PluginSettingTab {
 				name: "Output folder",
 				desc: "Vault folder the finished .epub file is written into. Leave blank for the vault root.",
 				control: { type: "text", key: "outputFolder", placeholder: "Manuscript/Exports" },
+			},
+			{
+				name: "Cover image",
+				desc: COVER_IMAGE_DESC,
+				control: { type: "text", key: "coverImage", placeholder: "Manuscript/Assets/cover.jpg" },
 			},
 		];
 	}
@@ -148,6 +160,19 @@ export class ManuscriptExportSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.outputFolder)
 					.onChange(async (value) => {
 						this.plugin.settings.outputFolder = value.trim();
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Cover image")
+			.setDesc(COVER_IMAGE_DESC)
+			.addText((text) =>
+				text
+					.setPlaceholder("Manuscript/Assets/cover.jpg")
+					.setValue(this.plugin.settings.coverImage)
+					.onChange(async (value) => {
+						this.plugin.settings.coverImage = value.trim();
 						await this.plugin.saveSettings();
 					})
 			);

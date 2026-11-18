@@ -12,9 +12,16 @@ import {
 	parseLongformFrontmatter,
 	resolveSceneFolderPath,
 	splitSingleFileIntoChapters,
+	detectCoverMediaType,
+	parseCoverReference,
 } from "./.core-bundle.cjs";
 
 const noResolver = () => null;
+
+/** Smallest byte sequences each format is recognised by, plus a little payload. */
+const PNG_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]);
+const JPEG_BYTES = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 9, 8, 7, 6]);
+const asArrayBuffer = (u8) => u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
 
 test("stripFrontmatter removes a leading YAML block -- fences must not render as scene breaks", () => {
 	const md = "---\ntitle: Chapter One\npov: Mira\n---\nThe rain had stopped.";
@@ -214,4 +221,87 @@ test("buildEpub produces a spec-valid, well-formed EPUB archive", async () => {
 
 test("buildEpub rejects an empty chapter list rather than producing a broken file", async () => {
 	await assert.rejects(() => buildEpub([], { title: "x", author: "y", language: "en", identifier: "z" }));
+});
+
+test("detectCoverMediaType reads the file's own bytes: PNG and JPEG only", () => {
+	assert.equal(detectCoverMediaType(asArrayBuffer(PNG_BYTES)), "image/png");
+	assert.equal(detectCoverMediaType(asArrayBuffer(JPEG_BYTES)), "image/jpeg");
+	// GIF89a, WebP (RIFF....WEBP) and empty files are rejected, whatever their extension.
+	assert.equal(detectCoverMediaType(asArrayBuffer(new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61]))), null);
+	assert.equal(detectCoverMediaType(asArrayBuffer(new TextEncoder().encode("RIFF0000WEBPVP8 "))), null);
+	assert.equal(detectCoverMediaType(new ArrayBuffer(0)), null);
+});
+
+test("parseCoverReference accepts the shapes authors actually write", () => {
+	assert.equal(parseCoverReference("[[Cover.jpg]]"), "Cover.jpg");
+	assert.equal(parseCoverReference("![[Art/Cover.png|Front cover]]"), "Art/Cover.png");
+	assert.equal(parseCoverReference("[[Cover.jpg#section]]"), "Cover.jpg");
+	// Unquoted `cover: [[Cover.jpg]]` in YAML arrives as a nested list.
+	assert.equal(parseCoverReference([["Cover.jpg"]]), "Cover.jpg");
+	assert.equal(parseCoverReference("Assets/cover.jpg"), "Assets/cover.jpg");
+	assert.equal(parseCoverReference("  /Assets/cover.jpg  "), "Assets/cover.jpg");
+	assert.equal(parseCoverReference("![](Assets/my%20cover.jpg)"), "Assets/my cover.jpg");
+	assert.equal(parseCoverReference("![Front](<Assets/my cover.jpg>)"), "Assets/my cover.jpg");
+});
+
+test("parseCoverReference returns null when no cover is set", () => {
+	for (const value of [undefined, null, "", "   ", 42, ["a", "b"], {}, "[[]]"]) {
+		assert.equal(parseCoverReference(value), null, `expected null for ${JSON.stringify(value)}`);
+	}
+});
+
+const coverTestChapters = [
+	{ title: "One", xhtmlBody: "<p>First.</p>" },
+	{ title: "Two", xhtmlBody: "<p>Second.</p>" },
+];
+// The title deliberately avoids the word "cover" so the no-cover assertions below stay meaningful.
+const coverTestMeta = { title: "Night Garden", author: "A. Writer", language: "en", identifier: "urn:uuid:test-0001" };
+
+test("buildEpub with a cover: image stored byte-for-byte, marked for EPUB 3 and EPUB 2 readers, shown first", async () => {
+	const cover = { data: asArrayBuffer(PNG_BYTES), mediaType: "image/png" };
+	const zip = await JSZip.loadAsync(Buffer.from(await buildEpub(coverTestChapters, { ...coverTestMeta, cover })));
+
+	const stored = await zip.file("OEBPS/images/cover.png").async("uint8array");
+	assert.deepEqual(Array.from(stored), Array.from(PNG_BYTES));
+
+	const opf = await zip.file("OEBPS/content.opf").async("string");
+	assert.match(opf, /<item id="cover-image" href="images\/cover\.png" media-type="image\/png" properties="cover-image"\/>/);
+	assert.match(opf, /<meta name="cover" content="cover-image"\/>/);
+	assert.match(opf, /<reference type="cover" title="Cover" href="cover\.xhtml"\/>/);
+	// The cover page is the first thing in reading order, before chapter 1.
+	const spine = /<spine[^>]*>([\s\S]*?)<\/spine>/.exec(opf)[1];
+	const idrefs = Array.from(spine.matchAll(/idref="([^"]+)"/g)).map((m) => m[1]);
+	assert.deepEqual(idrefs, ["cover", "chapter-1", "chapter-2"]);
+
+	const coverPage = await zip.file("OEBPS/cover.xhtml").async("string");
+	assert.match(coverPage, /<img src="images\/cover\.png" alt="Cover of Night Garden"\/>/);
+
+	// The table of contents still lists only real chapters.
+	const nav = await zip.file("OEBPS/nav.xhtml").async("string");
+	const tocEntries = /<nav epub:type="toc"[\s\S]*?<\/nav>/.exec(nav)[0];
+	assert.doesNotMatch(tocEntries, /cover/i);
+	assert.match(nav, /epub:type="landmarks"/);
+	const ncx = await zip.file("OEBPS/toc.ncx").async("string");
+	assert.doesNotMatch(ncx, /cover/i);
+});
+
+test("buildEpub with a JPEG cover names it .jpg", async () => {
+	const cover = { data: asArrayBuffer(JPEG_BYTES), mediaType: "image/jpeg" };
+	const zip = await JSZip.loadAsync(Buffer.from(await buildEpub(coverTestChapters, { ...coverTestMeta, cover })));
+	assert.ok(zip.file("OEBPS/images/cover.jpg"));
+	const opf = await zip.file("OEBPS/content.opf").async("string");
+	assert.match(opf, /href="images\/cover\.jpg" media-type="image\/jpeg"/);
+});
+
+test("buildEpub without a cover is unchanged: no image, no cover page, no cover markers", async () => {
+	for (const meta of [coverTestMeta, { ...coverTestMeta, cover: null }]) {
+		const zip = await JSZip.loadAsync(Buffer.from(await buildEpub(coverTestChapters, meta)));
+		assert.equal(zip.file("OEBPS/cover.xhtml"), null);
+		assert.equal(zip.file(/^OEBPS\/images\//).length, 0);
+		const opf = await zip.file("OEBPS/content.opf").async("string");
+		assert.doesNotMatch(opf, /cover/);
+		assert.doesNotMatch(opf, /<guide>/);
+		const nav = await zip.file("OEBPS/nav.xhtml").async("string");
+		assert.doesNotMatch(nav, /landmarks/);
+	}
 });

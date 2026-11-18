@@ -2,6 +2,7 @@ import { App, FuzzySuggestModal, Notice, Plugin, TFile, TFolder, normalizePath }
 import { DEFAULT_SETTINGS, ManuscriptExportSettings, ManuscriptExportSettingTab } from "./settings";
 import { convertNoteToXhtmlBody, stripFrontmatter, ResolvedEmbed } from "./markdownToXhtml";
 import { buildEpub, ChapterInput } from "./epubBuilder";
+import { CoverImage, detectCoverMediaType, parseCoverReference } from "./cover";
 import {
 	LongformProject,
 	parseLongformFrontmatter,
@@ -130,6 +131,7 @@ export default class ManuscriptExportPlugin extends Plugin {
 			language: stringOrDefault(record.language, DEFAULT_SETTINGS.language),
 			manuscriptFolder: stringOrDefault(record.manuscriptFolder, DEFAULT_SETTINGS.manuscriptFolder),
 			outputFolder: stringOrDefault(record.outputFolder, DEFAULT_SETTINGS.outputFolder),
+			coverImage: stringOrDefault(record.coverImage, DEFAULT_SETTINGS.coverImage),
 		};
 	}
 
@@ -149,6 +151,35 @@ export default class ManuscriptExportPlugin extends Plugin {
 		}
 		const binary = await this.app.vault.readBinary(dest);
 		return { target, dataUri: `data:${mime};base64,${arrayBufferToBase64(binary)}` };
+	}
+
+	/**
+	 * Resolves a cover reference (wikilink, vault path or markdown link, see
+	 * parseCoverReference) to a JPEG/PNG in the vault. A cover that can't be
+	 * used never blocks the export: the book is written without one and a
+	 * notice says why, so a typo costs a cover, not the whole export.
+	 */
+	private async loadCover(rawReference: unknown, sourcePath: string): Promise<CoverImage | null> {
+		const reference = parseCoverReference(rawReference);
+		if (!reference) return null;
+
+		let file = this.app.metadataCache.getFirstLinkpathDest(reference, sourcePath);
+		if (!(file instanceof TFile)) {
+			const byPath = this.app.vault.getAbstractFileByPath(normalizePath(reference));
+			file = byPath instanceof TFile ? byPath : null;
+		}
+		if (!(file instanceof TFile)) {
+			new Notice(`Manuscript Export: cover image "${reference}" not found, exported without a cover.`);
+			return null;
+		}
+
+		const data = await this.app.vault.readBinary(file);
+		const mediaType = detectCoverMediaType(data);
+		if (!mediaType) {
+			new Notice(`Manuscript Export: cover image "${file.path}" is not a JPG or PNG, exported without a cover.`);
+			return null;
+		}
+		return { data, mediaType };
 	}
 
 	private deriveChapterTitle(file: TFile, frontmatterTitle: string | undefined, headingTitle: string | null): string {
@@ -198,7 +229,7 @@ export default class ManuscriptExportPlugin extends Plugin {
 	}
 
 	/** Packages finished chapters into an .epub and writes it into the configured output folder. */
-	private async writeEpub(chapters: ChapterInput[], bookTitle: string): Promise<void> {
+	private async writeEpub(chapters: ChapterInput[], bookTitle: string, cover: CoverImage | null): Promise<void> {
 		const { authorName, language, outputFolder } = this.settings;
 
 		const arrayBuffer = await buildEpub(chapters, {
@@ -206,6 +237,7 @@ export default class ManuscriptExportPlugin extends Plugin {
 			author: authorName || "Unknown",
 			language: language || "en",
 			identifier: `urn:uuid:${crypto.randomUUID()}`,
+			cover,
 		});
 
 		const outFolderPath = normalizePath(outputFolder || "/");
@@ -256,7 +288,8 @@ export default class ManuscriptExportPlugin extends Plugin {
 			chapters.push(await this.noteToChapter(file));
 		}
 
-		await this.writeEpub(chapters, bookTitle || "Untitled Manuscript");
+		const cover = await this.loadCover(this.settings.coverImage, folder.path);
+		await this.writeEpub(chapters, bookTitle || "Untitled Manuscript", cover);
 	}
 
 	/** Finds every Longform index file in the vault via the metadata cache. */
@@ -332,7 +365,14 @@ export default class ManuscriptExportPlugin extends Plugin {
 			}
 		}
 
-		await this.writeEpub(chapters, bookTitle);
+		// The cover is a top-level `cover` property on the index note, next to
+		// `longform:` rather than inside it (Longform rewrites that block when
+		// scenes change). No fallback to the vault-wide setting: like the title,
+		// that may belong to a different book, and a wrong cover is worse than none.
+		const rawCover: unknown = this.app.metadataCache.getFileCache(indexFile)?.frontmatter?.cover;
+		const cover = await this.loadCover(rawCover, indexFile.path);
+
+		await this.writeEpub(chapters, bookTitle, cover);
 
 		if (missingScenes.length > 0) {
 			new Notice(`Manuscript Export: skipped ${missingScenes.length} missing scene note(s): ${missingScenes.join(", ")}`);

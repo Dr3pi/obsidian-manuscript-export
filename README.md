@@ -8,12 +8,29 @@ If you write in Longform, you already have your scenes in order. Run **"Export L
 
 No Longform? Use **"Export manuscript to EPUB"** with a plain folder of chapter notes (one note per chapter, natural-sort filename order — "Chapter 2" correctly sorts before "Chapter 10").
 
+## Covers
+
+New in 0.3.0: give the EPUB a cover, so e-readers and Calibre show your book instead of a generic placeholder. JPG or PNG.
+
+- **Longform:** add a `cover` property to the project's index note, next to `longform:` rather than inside it (Longform rewrites that block when scenes change). A wikilink or a vault path both work:
+
+  ```yaml
+  cover: "[[Cover.jpg]]"
+  longform:
+    format: scenes
+    # ...
+  ```
+
+- **Folder export:** set **Cover image** in the plugin settings, e.g. `Manuscript/Assets/cover.jpg`.
+
+No cover set means no change: the export is exactly what it was before. If the cover can't be found or isn't a JPG or PNG, the book still exports, without a cover, and a notice tells you why. Longform exports only use the project's own `cover` property, never the settings one, so a cover meant for one book can't end up on another.
+
 ## Why
 
 If you write long-form fiction or nonfiction in Obsidian, getting a properly formatted EPUB out the other end usually means a separate paid tool (Vellum, Atticus) or a fragile export chain. This handles the common case cleanly:
 
 - **Wikilinks** (`[[Note]]`, `[[Note|Display text]]`) render as plain text — a reader doesn't care about your internal note names.
-- **Image embeds** (`![[cover.png]]`) are embedded directly into the EPUB.
+- **Image embeds** (`![[village-map.png]]`) are embedded directly into the EPUB.
 - **Scene breaks** (`***` or `---` on their own line) render as a centered divider.
 - **YAML frontmatter** is stripped — metadata never leaks into your book.
 - **Callouts** (`> [!note] ...`) are stripped entirely, not rendered — they're almost always private author annotations (reminders, continuity notes), not content meant for a reader.
@@ -34,7 +51,7 @@ Or manually: download `manifest.json`, `main.js`, and `styles.css` from the [lat
 2. Open the command palette (`Ctrl+P` / `Cmd+P`) and run **"Export Longform project to EPUB"** or **"Export manuscript to EPUB"**.
 3. Your `.epub` appears in the output folder, ready for Calibre, Kindle Previewer, or your distributor of choice.
 
-## Current limitations (v0.2.0)
+## Current limitations (v0.3.0)
 
 - EPUB export only — no print-PDF export yet.
 - Non-image note embeds (`![[Another Note]]`, transcluding another note's content) are silently skipped, not resolved.

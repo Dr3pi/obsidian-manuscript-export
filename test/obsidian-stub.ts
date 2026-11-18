@@ -99,7 +99,12 @@ export class Vault {
 	}
 
 	getMarkdownFiles(): TFile[] {
-		return Array.from(this.nodes.values()).filter((n): n is TFile => n instanceof TFile && n.extension === "md");
+		return this.allFiles().filter((n) => n.extension === "md");
+	}
+
+	/** Test helper -- every file in the fake vault. */
+	allFiles(): TFile[] {
+		return Array.from(this.nodes.values()).filter((n): n is TFile => n instanceof TFile);
 	}
 
 	async read(file: TFile): Promise<string> {
@@ -136,6 +141,8 @@ export class Vault {
 export class MetadataCache {
 	private caches = new Map<string, StubCacheEntry>();
 
+	constructor(private vault?: Vault) {}
+
 	/** Test helper -- what getFileCache() will report for a path. */
 	setCache(path: string, entry: StubCacheEntry): void {
 		this.caches.set(path, entry);
@@ -145,14 +152,23 @@ export class MetadataCache {
 		return this.caches.get(file.path) ?? null;
 	}
 
-	getFirstLinkpathDest(_target: string, _sourcePath: string): TFile | null {
-		return null;
+	/**
+	 * Approximates Obsidian's link resolution closely enough for tests: an
+	 * exact vault path wins, otherwise the first file whose name (or
+	 * path suffix) matches the link text.
+	 */
+	getFirstLinkpathDest(target: string, _sourcePath: string): TFile | null {
+		if (!this.vault) return null;
+		const exact = this.vault.getAbstractFileByPath(target);
+		if (exact instanceof TFile) return exact;
+		const all = Array.from(this.vault.allFiles());
+		return all.find((f) => f.name === target || f.path.endsWith(`/${target}`)) ?? null;
 	}
 }
 
 export class App {
 	vault = new Vault();
-	metadataCache = new MetadataCache();
+	metadataCache = new MetadataCache(this.vault);
 }
 
 export class Plugin {
